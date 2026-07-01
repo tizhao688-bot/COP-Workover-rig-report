@@ -201,7 +201,7 @@ var DB = {"wells":[{"name":"ABE STATE 1H","formation":"Bone Spring","lift":"Rod 
        - professional rewrite of the tech's findings
        - auto-written chemical program recommendation
      Leave blank and the app just uses the tech's raw words. */
-  var AI_ENDPOINT="";
+  var AI_ENDPOINT="https://tizhao--d636951c758d11f1bbcc1607ee4eb77e.web.val.run";
   function aiEnhance(d,cb){
     if(!AI_ENDPOINT||(navigator.onLine===false)){cb(null);return;}
     var payload={well:d.well,formation:d.formation,lift:d.lift,foreman:d.foreman,tech:d.tech,
