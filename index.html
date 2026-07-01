@@ -194,7 +194,7 @@ var DB = {"wells":[{"name":"ABE STATE 1H","formation":"Bone Spring","lift":"Rod 
   "use strict";
   var $=function(id){return document.getElementById(id);};
   var photos=[], photoSeq=0, emails=[], selectedWell=null;
-  var ENH={findings:null,rec:null};
+  var ENH={struct:null};
 
   /* ====== AI enhancement (optional) ======
      Paste your Cloudflare Worker URL between the quotes to turn on:
@@ -206,12 +206,15 @@ var DB = {"wells":[{"name":"ABE STATE 1H","formation":"Bone Spring","lift":"Rod 
     if(!AI_ENDPOINT||(navigator.onLine===false)){cb(null);return;}
     var payload={well:d.well,formation:d.formation,lift:d.lift,foreman:d.foreman,tech:d.tech,
       oil:d.oil,water:d.water,gas:d.gas,failure:d.failure,findings:v('findings')};
-    var done=false,timer=setTimeout(function(){if(!done){done=true;cb(null);}},20000);
+    var done=false,timer=setTimeout(function(){if(!done){done=true;cb(null);}},25000);
     fetch(AI_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
       .then(function(r){return r.json();})
       .then(function(j){if(done)return;done=true;clearTimeout(timer);
-        if(j&&(j.findings||j.recommendation))cb({findings:j.findings||v('findings'),rec:j.recommendation||''});
-        else cb(null);})
+        if(j&&(j.discussion||j.recommendation||j.failure_summary||j.teardown)){
+          cb({summary:j.failure_summary||'',
+              teardown:Array.isArray(j.teardown)?j.teardown.filter(function(t){return t&&t.label;}):[],
+              discussion:j.discussion||'',recommendation:j.recommendation||''});
+        } else cb(null);})
       .catch(function(){if(done)return;done=true;clearTimeout(timer);cb(null);});
   }
 
@@ -334,7 +337,7 @@ var DB = {"wells":[{"name":"ABE STATE 1H","formation":"Bone Spring","lift":"Rod 
     well:selectedWell?selectedWell.name:v('wellSearch'),
     formation:v('formation'),lift:v('liftType'),foreman:v('foreman'),tech:v('tech'),
     oil:v('oil'),water:v('water'),gas:v('gas'),date:v('rptDate'),failure:v('failure'),
-    findings:(ENH.findings!=null?ENH.findings:v('findings')),recommend:(ENH.rec!=null?ENH.rec:'')
+    findings:v('findings'),recommend:''
   };}
   function prodLine(d){var a=[];if(d.oil)a.push(d.oil+' O');if(d.water)a.push(d.water+' W');if(d.gas)a.push(d.gas+' G');return a.join(' / ');}
   function prettyDate(iso){if(!iso)return'';var p=iso.split('-');return p.length===3?p[1]+'/'+p[2]+'/'+p[0]:iso;}
@@ -351,9 +354,18 @@ var DB = {"wells":[{"name":"ABE STATE 1H","formation":"Bone Spring","lift":"Rod 
       '<span class="k">Field Tech</span><span>'+em(d.tech)+'</span>'+
       '<span class="k">Date</span><span>'+(d.date?esc(prettyDate(d.date)):'<span class="empty">\u2014</span>')+'</span>'+
     '</div>';
-    h+='<h3>1. Failure Summary</h3><p class="item"><b>Type of Failure:</b> '+em(d.failure)+'</p>';
-    h+='<h3>2. Findings / Observations</h3><p>'+em(d.findings)+'</p>';
-    h+='<h3>3. Chemical Program &amp; Recommendations</h3><p>'+(ENH.rec!=null?em(d.recommend):'<span class="empty">Written automatically when you submit.</span>')+'</p>';
+    var S=ENH.struct;
+    if(S){
+      h+='<h3>1. Failure Summary</h3><p class="item"><b>Primary Cause of Failure:</b> '+em(S.summary||d.failure)+'</p>';
+      h+='<h3>2. Teardown &amp; Tailgate Testing Observations</h3>';
+      (S.teardown||[]).forEach(function(it){h+='<p class="item"><b>'+esc(it.label)+':</b> '+em(it.text)+'</p>';});
+      h+='<h3>3. Discussion</h3><p>'+em(S.discussion)+'</p>';
+      h+='<h3>4. Chemical Program &amp; Recommendations</h3><p>'+em(S.recommendation)+'</p>';
+    } else {
+      h+='<h3>1. Failure Summary</h3><p class="item"><b>Type of Failure:</b> '+em(d.failure)+'</p>';
+      h+='<h3>2. Findings / Observations</h3><p>'+em(d.findings)+'</p>';
+      h+='<h3>3. Chemical Program &amp; Recommendations</h3><p><span class="empty">Written automatically when you submit.</span></p>';
+    }
     if(photos.length){h+='<h3>Field Photos</h3>';photos.forEach(function(p,i){h+='<figure>'+(p.dataUrl?'<img src="'+p.dataUrl+'">':'')+'<figcaption><b>Photo '+(i+1)+'.</b> '+(p.caption?esc(p.caption):'<span class="empty">No note</span>')+'</figcaption></figure>';});}
     $('doc').innerHTML=h;
   }
@@ -368,7 +380,7 @@ var DB = {"wells":[{"name":"ABE STATE 1H","formation":"Bone Spring","lift":"Rod 
   function dataUrlToU8(u){var b=atob(u.split(',')[1]||''),n=b.length,a=new Uint8Array(n);for(var i=0;i<n;i++)a[i]=b.charCodeAt(i);return a;}
   function buildDocx(){
     if(!window.docx)return null;
-    var D=window.docx,d=data(),ch=[];
+    var D=window.docx,d=data(),ch=[],S=ENH.struct;
     ch.push(new D.Paragraph({alignment:D.AlignmentType.CENTER,spacing:{after:140},
       border:{bottom:{style:D.BorderStyle.SINGLE,size:14,color:'16242C',space:6}},
       children:[new D.TextRun({text:'Well Failure & Observation Report',bold:true,size:30,color:'16242C'})]}));
@@ -378,12 +390,24 @@ var DB = {"wells":[{"name":"ABE STATE 1H","formation":"Bone Spring","lift":"Rod 
       rows:[row('Well Name',d.well),row('Formation',d.formation),row('Lift Type',d.lift),row('Production',prodLine(d)),row('Foreman',d.foreman),row('Field Tech',d.tech),row('Date',prettyDate(d.date))]}));
     function heading(t){return new D.Paragraph({spacing:{before:220,after:80},children:[new D.TextRun({text:t,bold:true,size:24,color:'16242C'})]});}
     function para(t){return new D.Paragraph({spacing:{after:70},children:[new D.TextRun({text:t,size:22})]});}
-    ch.push(heading('1. Failure Summary'));
-    ch.push(new D.Paragraph({spacing:{after:70},children:[new D.TextRun({text:'Type of Failure: ',bold:true,size:22}),new D.TextRun({text:d.failure||'\u2014',size:22})]}));
-    ch.push(heading('2. Findings / Observations'));
-    splitLines(d.findings).forEach(function(l){ch.push(para(l));});
-    ch.push(heading('3. Chemical Program & Recommendations'));
-    splitLines(d.recommend||'To be reviewed by the account manager.').forEach(function(l){ch.push(para(l));});
+    function bullet(label,text){return new D.Paragraph({numbering:{reference:'obs',level:0},spacing:{after:70},children:[new D.TextRun({text:label+': ',bold:true,size:22}),new D.TextRun({text:text||'\u2014',size:22})]});}
+    if(S){
+      ch.push(heading('1. Failure Summary'));
+      ch.push(bullet('Primary Cause of Failure', S.summary||d.failure));
+      ch.push(heading('2. Teardown & Tailgate Testing Observations'));
+      (S.teardown||[]).forEach(function(it){ch.push(bullet(it.label,it.text));});
+      ch.push(heading('3. Discussion'));
+      splitLines(S.discussion).forEach(function(l){ch.push(para(l));});
+      ch.push(heading('4. Chemical Program & Recommendations'));
+      splitLines(S.recommendation).forEach(function(l){ch.push(para(l));});
+    } else {
+      ch.push(heading('1. Failure Summary'));
+      ch.push(new D.Paragraph({spacing:{after:70},children:[new D.TextRun({text:'Type of Failure: ',bold:true,size:22}),new D.TextRun({text:d.failure||'\u2014',size:22})]}));
+      ch.push(heading('2. Findings / Observations'));
+      splitLines(d.findings).forEach(function(l){ch.push(para(l));});
+      ch.push(heading('3. Chemical Program & Recommendations'));
+      splitLines('To be reviewed by the account manager.').forEach(function(l){ch.push(para(l));});
+    }
     var imgs=photos.filter(function(p){return p.dataUrl;});
     if(imgs.length){
       ch.push(heading('Field Photos'));
@@ -394,28 +418,35 @@ var DB = {"wells":[{"name":"ABE STATE 1H","formation":"Bone Spring","lift":"Rod 
       });
     }
     ch.push(new D.Paragraph({spacing:{before:220},children:[new D.TextRun({text:'Coastal Chemical Co., LLC \u2014 A Brenntag Company',italics:true,size:16,color:'969696'})]}));
-    return new D.Document({sections:[{properties:{},children:ch}]});
+    return new D.Document({numbering:{config:[{reference:'obs',levels:[{level:0,format:D.LevelFormat.BULLET,text:'\u2022',alignment:D.AlignmentType.LEFT,style:{paragraph:{indent:{left:360,hanging:200}}}}]}]},sections:[{properties:{},children:ch}]});
   }
   function exportDocx(cb){var doc=buildDocx();if(!doc||!window.docx){cb(null);return;}window.docx.Packer.toBlob(doc).then(function(b){cb(b);}).catch(function(){cb(null);});}
   function saveBlob(blob,fname){var a=document.createElement('a'),u=URL.createObjectURL(blob);a.href=u;a.download=fname;document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(u);a.remove();},1200);}
   function fileName(d){var b=(d.well||'Workover_Report').replace(/[^\w\-]+/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,'');return b+'_'+(d.date||'report')+'.docx';}
-  function textBody(d){var L=['WELL FAILURE & OBSERVATION REPORT','',
+  function textBody(d){var S=ENH.struct;var L=['WELL FAILURE & OBSERVATION REPORT','',
     'Well Name:   '+(d.well||'\u2014'),'Formation:   '+(d.formation||'\u2014'),'Lift Type:   '+(d.lift||'\u2014'),
     'Production:  '+(prodLine(d)||'\u2014'),'Foreman:     '+(d.foreman||'\u2014'),'Field Tech:  '+(d.tech||'\u2014'),
-    'Date:        '+(prettyDate(d.date)||'\u2014'),'',
-    '1. FAILURE SUMMARY','Type of Failure: '+(d.failure||'\u2014'),'',
-    '2. FINDINGS / OBSERVATIONS',d.findings||'\u2014','',
-    '3. CHEMICAL PROGRAM & RECOMMENDATIONS',(d.recommend||'To be reviewed by the account manager.')];
+    'Date:        '+(prettyDate(d.date)||'\u2014'),''];
+    if(S){
+      L.push('1. FAILURE SUMMARY','Primary Cause of Failure: '+(S.summary||d.failure||'\u2014'),'');
+      L.push('2. TEARDOWN & TAILGATE TESTING OBSERVATIONS');
+      (S.teardown||[]).forEach(function(it){L.push('- '+it.label+': '+(it.text||''));});
+      L.push('','3. DISCUSSION',S.discussion||'\u2014','','4. CHEMICAL PROGRAM & RECOMMENDATIONS',S.recommendation||'\u2014');
+    } else {
+      L.push('1. FAILURE SUMMARY','Type of Failure: '+(d.failure||'\u2014'),'',
+        '2. FINDINGS / OBSERVATIONS',d.findings||'\u2014','',
+        '3. CHEMICAL PROGRAM & RECOMMENDATIONS','To be reviewed by the account manager.');
+    }
     if(photos.length){L.push('','FIELD PHOTOS (attached in Word doc):');photos.forEach(function(p,i){L.push('  Photo '+(i+1)+': '+(p.caption||'(no note)'));});}
     L.push('','\u2014 Coastal Chemical Co., LLC, A Brenntag Company');return L.join('\n');
   }
   function send(){
     var d0=data();
     if(!d0.well){showToast('Pick or type a well name first');return;}
-    ENH={findings:null,rec:null};
-    showToast('Preparing report\u2026');
+    ENH={struct:null};
+    showToast('Polishing report\u2026');
     aiEnhance(d0,function(res){
-      if(res){ENH.findings=res.findings;ENH.rec=res.rec;}
+      ENH.struct=res||null;
       finishSend();
     });
   }
