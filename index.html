@@ -206,7 +206,7 @@ var DB = {"wells":[{"name":"ABE STATE 1H","formation":"Bone Spring","lift":"Rod 
     if(!AI_ENDPOINT||(navigator.onLine===false)){cb(null);return;}
     var payload={well:d.well,formation:d.formation,lift:d.lift,foreman:d.foreman,tech:d.tech,
       oil:d.oil,water:d.water,gas:d.gas,failure:d.failure,findings:v('findings')};
-    var done=false,timer=setTimeout(function(){if(!done){done=true;cb(null);}},25000);
+    var done=false,timer=setTimeout(function(){if(!done){done=true;cb(null);}},45000);
     fetch(AI_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
       .then(function(r){return r.json();})
       .then(function(j){if(done)return;done=true;clearTimeout(timer);
@@ -442,10 +442,16 @@ var DB = {"wells":[{"name":"ABE STATE 1H","formation":"Bone Spring","lift":"Rod 
     var d0=data();
     if(!d0.well){showToast('Pick or type a well name first');return;}
     ENH={struct:null};
-    showToast('Polishing report\u2026');
+    showToast('Writing report with AI\u2026');
     aiEnhance(d0,function(res){
-      ENH.struct=res||null;
-      finishSend();
+      if(res){ENH.struct=res;finishSend();return;}
+      // First try failed (often just a cold server) \u2014 retry once before falling back to raw notes.
+      showToast('Finishing the write-up\u2026');
+      aiEnhance(d0,function(res2){
+        ENH.struct=res2||null;
+        if(!res2)showToast('AI was busy \u2014 sending your notes as-is');
+        finishSend();
+      });
     });
   }
   function blobToBase64(blob){return new Promise(function(res,rej){var r=new FileReader();r.onload=function(){res((r.result||'').toString().split(',')[1]||'');};r.onerror=function(){rej();};r.readAsDataURL(blob);});}
