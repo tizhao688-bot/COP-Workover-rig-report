@@ -1,4 +1,4 @@
-var CACHE='wrr-v11';
+var CACHE='wrr-v12';
 var ASSETS=['./','./index.html','./manifest.webmanifest','./docx.umd.js',
   './apple-touch-icon.png','./icon-152.png','./icon-167.png','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',function(e){

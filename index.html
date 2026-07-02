@@ -438,56 +438,70 @@ var DB = {"wells":[{"name":"ABE STATE 1H","formation":"Bone Spring","lift":"Rod 
     if(photos.length){L.push('','FIELD PHOTOS (attached to this email):');photos.forEach(function(p,i){L.push('  Photo '+(i+1)+': '+(p.caption||'(no note)'));});}
     L.push('','\u2014 Coastal Chemical Co., LLC, A Brenntag Company');return L.join('\n');
   }
+  var READY=null;
+  function setSendLabel(t){var a=$('sendBtn'),b=$('sendBtn2');if(a)a.textContent=t;if(b)b.textContent=t;}
+  function resetReady(){if(READY){READY=null;setSendLabel('Send Report');}}
   function send(){
+    if(READY){shareNow();return;}                 // 2nd tap \u2192 open the share sheet on a fresh tap
     var d0=data();
     if(!d0.well){showToast('Pick or type a well name first');return;}
     ENH={struct:null};
+    setSendLabel('Writing\u2026');
     showToast('Writing report with AI\u2026');
     aiEnhance(d0,function(res){
-      if(res){ENH.struct=res;finishSend();return;}
+      if(res){ENH.struct=res;buildReady();return;}
       // First try failed (often just a cold server) \u2014 retry once before falling back to raw notes.
       showToast('Finishing the write-up\u2026');
       aiEnhance(d0,function(res2){
         ENH.struct=res2||null;
-        if(!res2)showToast('AI was busy \u2014 sending your notes as-is');
-        finishSend();
+        if(!res2)showToast('AI was busy \u2014 using your notes as-is');
+        buildReady();
       });
     });
   }
-  function blobToBase64(blob){return new Promise(function(res,rej){var r=new FileReader();r.onload=function(){res((r.result||'').toString().split(',')[1]||'');};r.onerror=function(){rej();};r.readAsDataURL(blob);});}
-  function finishSend(){
-    var d=data();
-    var fname=fileName(d),subject=subject0(d),body=textBody(d);
-    if(!window.docx){serverSend(d,fname,subject,body,'',null);return;}
+  // Build the Word doc + photo files, then arm the "Send Now" (share) step.
+  function buildReady(){
+    var d=data(),fname=fileName(d),subject=subject0(d),body=textBody(d),note=emails.length?' (to: '+emails.join(', ')+')':'';
+    if(!window.docx){setSendLabel('Send Report');openMail(emails.join(','),subject,body);showToast('Opening your email');return;}
     showToast('Building Word doc\u2026');
     exportDocx(function(blob){
-      if(!blob||!blob.size){serverSend(d,fname,subject,body,'',null);return;}
-      blobToBase64(blob).then(function(b64){serverSend(d,fname,subject,body,b64,blob);},function(){serverSend(d,fname,subject,body,'',blob);});
+      var files=[];
+      if(blob&&blob.size)files.push(new File([blob],fname,{type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}));
+      photos.filter(function(p){return p.dataUrl;}).forEach(function(p,i){try{files.push(new File([dataUrlToU8(p.dataUrl)],'photo-'+(i+1)+'.jpg',{type:'image/jpeg'}));}catch(e){}});
+      READY={files:files,subject:subject,body:body,fname:fname,note:note,blob:blob};
+      setSendLabel('\ud83d\udce4 Send Now');
+      showToast('Report ready \u2713  Tap \u201cSend Now\u201d to attach & email');
     });
   }
-  // Email the report (Word doc + photos attached) via the worker to your own inbox.
-  function serverSend(d,fname,subject,body,docxBase64,blob){
-    if(!AI_ENDPOINT){emailFallback(blob,fname,subject,body);return;}
-    showToast('Emailing report\u2026');
-    var imgs=photos.filter(function(p){return p.dataUrl;}).map(function(p,i){return {name:'photo-'+(i+1)+'.jpg',dataUrl:p.dataUrl};});
-    var payload={action:'sendEmail',to:emails,subject:subject,text:body,filename:fname,docxBase64:docxBase64||'',photos:imgs};
-    var done=false,timer=setTimeout(function(){if(done)return;done=true;emailFallback(blob,fname,subject,body);},60000);
-    fetch(AI_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-      .then(function(r){return r.json();})
-      .then(function(j){if(done)return;done=true;clearTimeout(timer);
-        if(j&&j.ok){showToast('Report emailed to your inbox \u2713');}
-        else{emailFallback(blob,fname,subject,body);}})
-      .catch(function(){if(done)return;done=true;clearTimeout(timer);emailFallback(blob,fname,subject,body);});
+  // 2nd tap: hand the doc + photos to the phone's share sheet so the tech emails anyone.
+  function shareNow(){
+    var R=READY;
+    if(navigator.canShare&&R.files.length&&navigator.canShare({files:R.files})){
+      navigator.share({files:R.files,title:R.subject,text:'Workover rig report'+R.note})
+        .then(function(){READY=null;setSendLabel('Send Report');showToast('Shared \u2713');})
+        .catch(function(err){
+          if(err&&err.name==='AbortError'){showToast('Send cancelled \u2014 tap \u201cSend Now\u201d to try again');return;} // keep it armed
+          downloadFallback(R);
+        });
+      return;
+    }
+    downloadFallback(R);
   }
-  // If the server can't be reached, save the doc and open the mail app the old way.
-  function emailFallback(blob,fname,subject,body){
-    if(blob&&blob.size){saveBlob(blob,fname);showToast('Couldn\u2019t email \u2014 doc saved, attach it');setTimeout(function(){openMail(emails.join(','),subject,body+'\n\n[Attach the saved Word doc: '+fname+']');},600);}
-    else{openMail(emails.join(','),subject,body);showToast('Couldn\u2019t email \u2014 opening your mail app');}
+  // No share sheet (desktop): download the doc + photos so the tech attaches them manually.
+  function downloadFallback(R){
+    READY=null;setSendLabel('Send Report');
+    if(R.blob&&R.blob.size)saveBlob(R.blob,R.fname);
+    photos.filter(function(p){return p.dataUrl;}).forEach(function(p,i){try{saveBlob(new Blob([dataUrlToU8(p.dataUrl)],{type:'image/jpeg'}),'photo-'+(i+1)+'.jpg');}catch(e){}});
+    showToast('Downloaded \u2014 attach the doc & photos in your email');
+    setTimeout(function(){openMail(emails.join(','),R.subject,R.body+'\n\n[Attach the saved Word doc'+(photos.length?' + photos':'')+']');},600);
   }
   function subject0(d){return 'Workover Rig Report \u2014 '+d.well+(d.date?' ('+prettyDate(d.date)+')':'');}
   function openMail(to,subject,body){window.location.href='mailto:'+encodeURIComponent(to||'')+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);}
   $('sendBtn').addEventListener('click',send);
   $('sendBtn2').addEventListener('click',send);
+  // If the tech edits anything (fields, a new photo) after building, re-arm so the doc is never stale.
+  document.addEventListener('input',resetReady,true);
+  document.addEventListener('change',resetReady,true);
 
   var tt;function showToast(m){var t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(function(){t.classList.remove('show');},2400);}
 })();
