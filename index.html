@@ -384,10 +384,9 @@ var DB = {"wells":[{"name":"ABE STATE 1H","formation":"Bone Spring","lift":"Rod 
     ch.push(new D.Paragraph({alignment:D.AlignmentType.CENTER,spacing:{after:140},
       border:{bottom:{style:D.BorderStyle.SINGLE,size:14,color:'16242C',space:6}},
       children:[new D.TextRun({text:'Well Failure & Observation Report',bold:true,size:30,color:'16242C'})]}));
-    function cell(t,bold,w){return new D.TableCell({width:{size:w,type:D.WidthType.PERCENTAGE},margins:{top:40,bottom:40,left:80,right:80},children:[new D.Paragraph({children:[new D.TextRun({text:t||'\u2014',bold:!!bold,size:20,color:bold?'3C4A52':'1A1A1A'})]})]});}
-    function row(k,v){return new D.TableRow({children:[cell(k,true,30),cell(v,false,70)]});}
-    ch.push(new D.Table({width:{size:100,type:D.WidthType.PERCENTAGE},
-      rows:[row('Well Name',d.well),row('Formation',d.formation),row('Lift Type',d.lift),row('Production',prodLine(d)),row('Foreman',d.foreman),row('Field Tech',d.tech),row('Date',prettyDate(d.date))]}));
+    function info(k,v){return new D.Paragraph({spacing:{after:30},children:[new D.TextRun({text:k+':  ',bold:true,size:22,color:'3C4A52'}),new D.TextRun({text:v||'\u2014',size:22,color:'1A1A1A'})]});}
+    [['Well Name',d.well],['Formation',d.formation],['Lift Type',d.lift],['Production',prodLine(d)],['Foreman',d.foreman],['Field Tech',d.tech],['Date',prettyDate(d.date)]].forEach(function(r){ch.push(info(r[0],r[1]));});
+    ch.push(new D.Paragraph({spacing:{after:60},border:{bottom:{style:D.BorderStyle.SINGLE,size:6,color:'D0D0D0',space:4}},children:[new D.TextRun({text:'',size:2})]}));
     function heading(t){return new D.Paragraph({spacing:{before:220,after:80},children:[new D.TextRun({text:t,bold:true,size:24,color:'16242C'})]});}
     function para(t){return new D.Paragraph({spacing:{after:70},children:[new D.TextRun({text:t,size:22})]});}
     function bullet(label,text){return new D.Paragraph({numbering:{reference:'obs',level:0},spacing:{after:70},children:[new D.TextRun({text:label+': ',bold:true,size:22}),new D.TextRun({text:text||'\u2014',size:22})]});}
@@ -411,10 +410,9 @@ var DB = {"wells":[{"name":"ABE STATE 1H","formation":"Bone Spring","lift":"Rod 
     var imgs=photos.filter(function(p){return p.dataUrl;});
     if(imgs.length){
       ch.push(heading('Field Photos'));
+      ch.push(para(imgs.length+' photo'+(imgs.length>1?'s':'')+' attached to this email.'));
       imgs.forEach(function(p,i){
-        var maxW=470,w=p.w||800,h=p.h||600,sc=Math.min(1,maxW/w),dw=Math.round(w*sc),dh=Math.round(h*sc);
-        try{ch.push(new D.Paragraph({spacing:{after:40},children:[new D.ImageRun({type:'jpg',data:dataUrlToU8(p.dataUrl),transformation:{width:dw,height:dh}})]}));}catch(e){}
-        ch.push(new D.Paragraph({spacing:{after:140},children:[new D.TextRun({text:'Photo '+(i+1)+'. ',bold:true,size:18,color:'3C4A52'}),new D.TextRun({text:p.caption||'(no note)',size:18})]}));
+        if(p.caption)ch.push(new D.Paragraph({spacing:{after:40},children:[new D.TextRun({text:'Photo '+(i+1)+'. ',bold:true,size:18,color:'3C4A52'}),new D.TextRun({text:p.caption,size:18})]}));
       });
     }
     ch.push(new D.Paragraph({spacing:{before:220},children:[new D.TextRun({text:'Coastal Chemical Co., LLC \u2014 A Brenntag Company',italics:true,size:16,color:'969696'})]}));
@@ -437,7 +435,7 @@ var DB = {"wells":[{"name":"ABE STATE 1H","formation":"Bone Spring","lift":"Rod 
         '2. FINDINGS / OBSERVATIONS',d.findings||'\u2014','',
         '3. CHEMICAL PROGRAM & RECOMMENDATIONS','To be reviewed by the account manager.');
     }
-    if(photos.length){L.push('','FIELD PHOTOS (attached in Word doc):');photos.forEach(function(p,i){L.push('  Photo '+(i+1)+': '+(p.caption||'(no note)'));});}
+    if(photos.length){L.push('','FIELD PHOTOS (attached to this email):');photos.forEach(function(p,i){L.push('  Photo '+(i+1)+': '+(p.caption||'(no note)'));});}
     L.push('','\u2014 Coastal Chemical Co., LLC, A Brenntag Company');return L.join('\n');
   }
   function send(){
