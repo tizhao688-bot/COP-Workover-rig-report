@@ -462,7 +462,7 @@ var DB = {"wells":[{"name":"ABE STATE 1H","formation":"Bone Spring","lift":"Rod 
       if(navigator.canShare&&navigator.canShare({files:[file]})){
         navigator.share({files:[file],title:subject,text:'Workover rig report for '+d.well+note})
           .then(function(){showToast('Shared');})
-          .catch(function(err){if(err&&(err.name==='AbortError'||err.name==='NotAllowedError'))return;fallback();});
+          .catch(function(err){if(err&&err.name==='AbortError')return;fallback();});
         return;
       }
       fallback();
